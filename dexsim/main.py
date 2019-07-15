@@ -4,14 +4,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
-from time import clock
 
 from cigam import Magic
-
-from . import logs
-from .driver import Driver
-from .oracle import Oracle
+from dexsim import DEBUG_MODE
+from dexsim.driver import Driver
+from dexsim.oracle import Oracle
 
 main_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 JAVA = 'java'
@@ -28,9 +27,16 @@ def clean(smali_dir):
             shutil.rmtree(xpath)
 
 
-def dexsim(dex_file, smali_dir, includes):
+def dexsim(apk_file, smali_dir, includes):
+    """推送到手机/模拟器，动态解密
+
+    Args:
+        apk_file (TYPE): Description
+        smali_dir (TYPE): Description
+        includes (TYPE): Description
+    """
     driver = Driver()
-    driver.push_to_dss(dex_file)
+    driver.push_to_dss(apk_file)
 
     oracle = Oracle(smali_dir, driver, includes)
     oracle.divine()
@@ -43,10 +49,7 @@ def baksmali(dex_file, output_dir='out'):
     baksmali_path = os.path.join(main_path, 'smali', 'baksmali.jar')
     cmd = '{} -jar {} d {} -o {}'.format(JAVA,
                                          baksmali_path, dex_file, output_dir)
-    print(cmd)
     subprocess.call(cmd, shell=True)
-    clean(output_dir)
-
     return output_dir
 
 
@@ -55,42 +58,56 @@ def smali(smali_dir, output_file='out.dex'):
     smali to dex
     '''
     smali_path = os.path.join(main_path, 'smali', 'smali.jar')
-    cmd = '{} -jar {} a {} -o {}'.format(JAVA,
-                                         smali_path, smali_dir, output_file)
+    cmd = '{} -jar {} a {} -o {}'.format(JAVA, smali_path, smali_dir, output_file)
     subprocess.call(cmd, shell=True)
-
     return output_file
 
 
-def main(args):
-    includes = args.includes
+def dexsim_apk(apk_file, smali_dir, includes, output_dex):
+    """解密apk
 
-    # Debug mode
-    logs.DEBUG = args.d
-    # logs.DEBUG = DEBUG
-    smali_dir = None
-    if logs.DEBUG:
-        smali_dir = os.path.join(os.path.abspath(os.curdir), 'smali')
+    Args:
+        apk_file (str): apk文件
+        smali_dir (str): smali 目录
+        includes (list): 过滤字符串
+        output_dex (str): 反编译后的文件
+    """
+    dexsim(apk_file, smali_dir, includes)
+    if output_dex:
+        smali(smali_dir, output_dex)
     else:
-        smali_dir = tempfile.mkdtemp()
+        smali(smali_dir,
+              os.path.splitext(os.path.basename(apk_file))[0] + '.sim.dex')
+
+    if not DEBUG_MODE:
+        shutil.rmtree(smali_dir)
+
+
+def main(args):
+    global DEBUG_MODE
+    DEBUG_MODE = args.debug
+    includes = args.includes
 
     output_dex = None
     if args.o:
         output_dex = args.o
 
+    if args.s:
+        if os.path.isdir(args.s):
+            dexsim_apk(args.f, args.s, includes, output_dex)
+        return
+
+    smali_dir = None
+    if DEBUG_MODE:
+        smali_dir = os.path.join(os.path.abspath(os.curdir), 'zzz')
+    else:
+        smali_dir = tempfile.mkdtemp()
+
     dex_file = None
-    # smali dir
-    if os.path.isdir(args.f):
-        if args.f.endswith('\\') or args.f.endswith('/'):
-            smali_dir = args.f[:-1]
-        else:
-            smali_dir = args.f
-        dex_file = smali(smali_dir, os.path.basename(smali_dir) + '.dex')
-        dexsim_dex(dex_file, smali_dir, includes, output_dex)
-    elif Magic(args.f).get_type() == 'apk':
+    if Magic(args.f).get_type() == 'apk':
         apk_path = args.f
 
-        if logs.DEBUG:
+        if DEBUG_MODE:
             tempdir = os.path.join(os.path.abspath(os.curdir), 'tmp_dir')
             if not os.path.exists(tempdir):
                 os.mkdir(tempdir)
@@ -108,41 +125,28 @@ def main(args):
 
         dex_file = os.path.join(tempdir, 'new.dex')
 
-        # smali(smali_dir, dex_file)
-        dexsim_dex(args.f, smali_dir, includes, output_dex)
-        if not logs.DEBUG:
+        smali(smali_dir, dex_file)
+        dexsim_apk(args.f, smali_dir, includes, output_dex)
+        if not DEBUG_MODE:
             shutil.rmtree(tempdir)
-    elif Magic(args.f).get_type() == 'dex':
-        dex_file = os.path.basename(args.f)
-        baksmali(dex_file, smali_dir)
-        dexsim_dex(dex_file, smali_dir, includes, output_dex)
+
     else:
-        print("Please give smali_dir/dex/apk.")
-
-
-def dexsim_dex(dex_file, smali_dir, includes, output_dex):
-    dexsim(dex_file, smali_dir, includes)
-    if output_dex:
-        smali(smali_dir, output_dex)
-    else:
-        smali(smali_dir,
-              os.path.splitext(os.path.basename(dex_file))[0] + '.sim.dex')
-
-    if not logs.DEBUG:
-        shutil.rmtree(smali_dir)
+        print("Please give A apk.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='dexsim', description='')
-    parser.add_argument('f', help='Smali Directory / DEX / APK')
+    parser.add_argument('f', help='APK 文件')
     parser.add_argument('-i', '--includes', nargs='*',
-                        help='仅仅处理smali路径包含该路径的文件')
+                        help='仅解密包含的类，如abc, a.b.c')
     parser.add_argument('-o', help='output file path')
-    parser.add_argument('-d', action='store_true', help='DEBUG MODE')
+    parser.add_argument('-d', '--debug', action='store_true', help='开启调试模式')
+    parser.add_argument('-s', required=False, help='指定smali目录')
+    # TODO parser.add_argument('-b', action='store_true', help='开启STEP_BY_STEP插件')
 
     args = parser.parse_args()
 
-    start = clock()
+    start = time.time()
     main(args)
-    finish = clock()
+    finish = time.time()
     print('\n%fs' % (finish - start))

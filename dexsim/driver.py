@@ -1,15 +1,9 @@
 import json
-import logging
 import os
 import tempfile
 
-# from adbwrapper import ADB
+from dexsim import DEBUG_MODE
 from pyadb3 import ADB
-
-from . import logs
-
-logger = logging.getLogger(__name__)
-
 
 DSS_PATH = '/data/local/dss'
 DSS_APK_PATH = '/data/local/dss/tmp.apk'
@@ -80,6 +74,11 @@ class Driver:
         self.adb.run_cmd(
             ['pull', DSS_OUTPUT_PATH, output_path])
 
+        if not os.path.exists(output_path):
+            print('Could not pull the file {}'.format(output_path))
+            self.stop_dss()
+            return
+
         with open(output_path, mode='r+', encoding='utf-8') as ofile:
             size = len(ofile.read())
             if not size:
@@ -89,7 +88,7 @@ class Driver:
                 ofile.seek(0)
                 result = json.load(ofile)
 
-        if not logs.DEBUG:
+        if not DEBUG_MODE:
             self.adb.run_shell_cmd(['rm', DSS_OUTPUT_PATH])
             self.adb.run_shell_cmd(['rm', DSS_TARGETS_PATH])
         else:

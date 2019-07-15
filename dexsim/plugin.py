@@ -4,32 +4,24 @@
 - 解密插件必须实现run方法。
 """
 import hashlib
-import logging
 import os
-import re
 import tempfile
 from abc import abstractmethod
 from json import JSONEncoder
 
+from dexsim import DEBUG_MODE
 from smaliemu.emulator import Emulator
 from timeout3 import timeout
-from dexsim import DEBUG
-
-logger = logging.getLogger(__name__)
 
 
 class Plugin(object):
-    """
-    解密插件基类
-    """
     name = 'Plugin'
     description = ''
     version = ''
     enabled = True
-    index = 0 # 插件执行顺序；最小值为0，数值越大，执行越靠后。
+    index = 0  # 插件执行顺序；最小值为0，数值越大，执行越靠后。
+    ONE_TIME = False  # True表示该插件只执行一次
 
-    # TODO 这个得放到库中
-    
     # const/16 v2, 0x1a
     CONST_NUMBER = r'const(?:\/\d+) [vp]\d+, (-?0x[a-f\d]+)\s+'
     # ESCAPE_STRING = '''"(.*?)(?<!\\\\)"'''
@@ -57,7 +49,7 @@ class Plugin(object):
     data_arraies = {}
     # smali methods witch have been update
     smali_mtd_updated_set = set()
-    
+
     # 存放field的内容，各个插件通用。
     fields = {}
 
@@ -100,8 +92,6 @@ class Plugin(object):
                 if not field:
                     continue
             except TypeError as ex:
-                logger.warning(ex)
-                logger(field_desc)
                 continue
 
             value = field.get_value()
@@ -165,17 +155,17 @@ class Plugin(object):
                 byte_arr.append(item)
             return '[C:' + str(byte_arr)
 
-        logger.warning('不支持该类型 %s %s', typ8, value)
-
     @timeout(3)
     def get_vm_variables(self, snippet, args, rnames):
-        """
-        snippet : smali 代码
-        args    ：方法参数
-        rnames  ：寄存器
+        """获取当前vm的变量
 
-        获取当前vm的变量
+        Args:
+            snippet (list): smali 代码
+            args (dict): 方法参数
+            rnames (list): 寄存器
 
+        Returns:
+            dict: 返回vm的变量池/寄存器池
         """
         # 原本想法是，行数太多，执行过慢；而参数一般在前几行
         # 可能执行5句得倒的结果，跟全部执行的不一样
@@ -209,6 +199,14 @@ class Plugin(object):
         json item 为一个json格式的解密对象。
         包含id、className、methodName、arguments。
         模拟器/手机会通过解析这个对象进行解密。
+
+        Args:
+            cls_name (str): 'a.b.c'
+            mtd_name (str): 'amth'
+            args (list): ['I:12', ... , ...]
+
+        Returns:
+            dict: Description
         """
         item = {'className': cls_name,
                 'methodName': mtd_name,
@@ -221,10 +219,17 @@ class Plugin(object):
         """
         往json list添加json解密对象
         json list 存放了所有的json格式解密对象。
+
+        Args:
+            json_item (dict): 解密对象
+            mtd (SmaliMethod): 解密对象所在的方法
+            old_content (str): 要替换的内容
+            rtn_name (str): 返回值寄存器的名字，用于存放解密结果。
         """
         mid = json_item['id']
+        # 最终要替换的内容
         if rtn_name:
-            new_content = 'const-string ' + rtn_name + ', "{}"'
+            new_content = 'const-string ' + rtn_name + ', "{}"\n'
         else:
             new_content = ('const-string v0, "Dexsim"\n'
                            'const-string v1, "{}"\n'
@@ -256,7 +261,7 @@ class Plugin(object):
             return
 
         jsons = JSONEncoder().encode(self.json_list)
-        if DEBUG:
+        if DEBUG_MODE:
             print("\nJSON内容(解密类、方法、参数)：")
             print(jsons)
 
@@ -266,7 +271,7 @@ class Plugin(object):
         outputs = self.driver.decode(tfile.name)
         os.unlink(tfile.name)
 
-        if DEBUG:
+        if DEBUG_MODE:
             print("解密结果:")
             print(outputs)
 
@@ -278,12 +283,11 @@ class Plugin(object):
 
         for key, value in outputs.items():
             if key not in self.target_contexts:
-                logger.warning('not found %s', key)
                 continue
 
             if not value[0] or value[0] == 'null':
                 continue
-            
+
             if not value[0].isprintable():
                 print("解密结果不可读：", key, value)
                 continue
@@ -292,7 +296,7 @@ class Plugin(object):
             for item in self.target_contexts[key]:
                 old_body = item[0].get_body()
                 old_content = item[1]
-                if DEBUG:
+                if DEBUG_MODE:
                     print(item[2], value[0])
                 new_content = item[2].format(value[0])
 
@@ -304,16 +308,22 @@ class Plugin(object):
         self.clear()
 
     def clear(self):
-        """
-        每次解密完毕后，都需要清理。
+        """每次解密完毕后，都需要清理。
+
+        Returns:
+            None
+
         """
         self.json_list.clear()
         self.target_contexts.clear()
 
     def smali_files_update(self):
-        '''
-            write changes to smali files
-        '''
+        """更新Smali文件
+
+        Returns:
+            type: None
+
+        """
         if self.make_changes:
             for sf in self.smalidir:
                 sf.update()

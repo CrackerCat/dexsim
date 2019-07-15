@@ -19,8 +19,8 @@
     protos:
       - Ljava/lang/String;
     pattern:
-      - const-string (.*?), ".*?"\s*
-      - invoke-static(?:\/range)? \{\1\}, (.*?);->(.*?)\(Ljava/lang/String;\)Ljava/lang/String;\s*
+      - const-string .*?, ".*?"\s*
+      - invoke-static(?:\/range|) \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;\)Ljava/lang/String;\s*
       - move-result-object (.*?)\s
 -  SS:
     enabled: 1
@@ -29,9 +29,9 @@
       - Ljava/lang/String;
       - Ljava/lang/String;
     pattern:
-      - const-string (.*?), "(.*?)"\s*
-      - const-string (.*?), "(.*?)"\s*
-      - invoke-static(?:\/range)? \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;Ljava/lang/String;\)Ljava/lang/String;\s*
+      - const-string .*?, ".*?"\s*
+      - const-string .*?, ".*?"\s*
+      - invoke-static(?:\/range|) \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;Ljava/lang/String;\)Ljava/lang/String;\s*
       - move-result-object (.*?)\s
 -  SSS:
     enabled: 1
@@ -41,8 +41,36 @@
       - Ljava/lang/String;
       - Ljava/lang/String;
     pattern:
-      - const-string (.*?), "(.*?)"\s*
-      - const-string (.*?), "(.*?)"\s*
-      - const-string (.*?), "(.*?)"\s*
-      - invoke-static(?:\/range)? \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;\)Ljava/lang/String;\s*
+      - const-string .*?, ".*?"\s*
+      - const-string .*?, ".*?"\s*
+      - const-string .*?, ".*?"\s*
+      - invoke-static(?:\/range|) \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;\)Ljava/lang/String;\s*
       - move-result-object (.*?)\s
+-  SCC:
+    enabled: 1
+    type: 1
+    protos:
+      - Ljava/lang/String;
+      - C
+      - C
+    pattern:
+      - const-string (.*?), "(.*?)"\s*
+      - const\/\d+ (.*?), (.*?)\s*
+      - const\/\d+ (.*?), (.*?)\s*
+      - invoke-static(?:\/range|) \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;CC\)Ljava/lang/String;\s*
+      - move-result-object (v\d+)
+-  SCCC:
+    enabled: 1
+    type: 1
+    protos:
+      - Ljava/lang/String;
+      - C
+      - C
+      - C
+    pattern:
+      - const-string (.*?), "(.*?)"\s*
+      - const\/\d+ (.*?), (.*?)\s*
+      - const\/\d+ (.*?), (.*?)\s*
+      - const\/\d+ (.*?), (.*?)\s*
+      - invoke-static(?:\/range|)? \{(.*?)\}, (.*?);->(.*?)\(Ljava/lang/String;CCC\)Ljava/lang/String;\s*
+      - move-result-object (v\d+)
